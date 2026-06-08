@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_DEVICE_DOMAIN = os.environ.get("TSD_DEVICE_DOMAIN", "mx.ts.harun.dev")
-DEFAULT_CONFIG = Path(os.environ.get("TSD_CONFIG", Path.home() / ".config" / "tsd" / "routes.json"))
-DEFAULT_CADDY = Path(os.environ.get("TSD_CADDY", Path.home() / ".config" / "tsd" / "routes.caddy"))
+DEFAULT_CONFIG = Path(os.environ.get("TSD_CONFIG", Path("/Users") / os.environ.get("USER", "rayhan") / ".config" / "tsd" / "routes.json"))
+DEFAULT_CADDY = Path(os.environ.get("TSD_CADDY", Path("/Users") / os.environ.get("USER", "rayhan") / ".config" / "tsd" / "routes.caddy"))
 DEFAULT_UPSTREAM_HOST = os.environ.get("TSD_UPSTREAM_HOST", "host.docker.internal")
 DEFAULT_UPSTREAM_SCHEME = os.environ.get("TSD_UPSTREAM_SCHEME", "http")
 CADDY_CONTAINER = os.environ.get("TSD_CADDY_CONTAINER", "instagram-slides-caddy")
@@ -156,12 +156,14 @@ def print_routes(routes: dict[str, dict[str, Any]], highlight: Optional[str] = N
     if not entries:
         print("no routes configured")
         return
-    for key, _, route in entries:
+    for idx, (key, _, route) in enumerate(entries, start=1):
         marker = "*" if highlight and (highlight == key or highlight == route.domain) else " "
-        workdir = route.workdir or "-"
-        print(
-            f"{marker} key={key} domain={route.domain} port={route.port} workdir={workdir} path={route.display_path}"
-        )
+        reference = route.workdir or "-"
+        print(f"{marker} {idx}. {route.domain}")
+        print(f"    key: {key}")
+        print(f"    port: {route.port}")
+        print(f"    reference: {reference}")
+        print(f"    path: {route.display_path}")
 
 
 def render_caddy(config: dict[str, Any]) -> str:
@@ -176,26 +178,15 @@ def render_caddy(config: dict[str, Any]) -> str:
         )
         host = route.domain
         matcher = f"tsd_{slugify(host)}_{hashlib.sha1(host.encode('utf-8')).hexdigest()[:8]}"
+        lines.append(f"@{matcher} host {host}")
+        lines.append(f"handle @{matcher} {{")
         if route.path:
-            lines.extend(
-                [
-                    f"@{matcher} host {host}",
-                    f"handle_path @{matcher} {{",
-                    f"\treverse_proxy {DEFAULT_UPSTREAM_HOST}:{route.port}",
-                    "}",
-                    "",
-                ]
-            )
+            lines.append(f"\thandle_path {route.path}* {{")
+            lines.append(f"\t\treverse_proxy {DEFAULT_UPSTREAM_HOST}:{route.port}")
+            lines.append("\t}")
         else:
-            lines.extend(
-                [
-                    f"@{matcher} host {host}",
-                    f"handle @{matcher} {{",
-                    f"\treverse_proxy {DEFAULT_UPSTREAM_HOST}:{route.port}",
-                    "}",
-                    "",
-                ]
-            )
+            lines.append(f"\treverse_proxy {DEFAULT_UPSTREAM_HOST}:{route.port}")
+        lines.extend(["}", ""])
     if len(lines) == 1:
         lines.append("# no routes configured")
     return "\n".join(lines).rstrip() + "\n"
@@ -241,9 +232,10 @@ def cmd_add(args: argparse.Namespace) -> int:
     ensure_config(config)
     routes = config.setdefault("routes", {})
 
+    default_workdir = args.workdir if args.workdir else str(Path.cwd())
+    workdir_input = prompt("reference directory", default_workdir)
     key = normalize_name(args.name or prompt("route key (e.g. is or mx.ts.harun.dev)"))
     port_text = str(args.port) if args.port is not None else prompt("local port")
-    workdir_input = args.workdir if args.workdir else prompt("reference directory", str(Path.cwd()))
     path_input = args.path if args.path is not None else prompt("path prefix (optional)", "")
     workdir = str(Path(workdir_input).expanduser().resolve())
     path = path_input.strip()

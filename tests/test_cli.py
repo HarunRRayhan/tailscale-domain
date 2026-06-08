@@ -32,7 +32,7 @@ def test_help_mentions_add_and_rm(capsys):
 def test_add_list_apply_roundtrip(temp_env, monkeypatch, capsys):
     config, caddy = temp_env
     monkeypatch.setattr(cli, "restart_caddy", lambda: None)
-    answers = iter(["is", "9010", "/Users/rayhan/Code/instagram-slides", "/instagram-slides"])
+    answers = iter(["/Users/rayhan/Code/instagram-slides", "is", "9010", "/instagram-slides"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     assert cli.cmd_add(type("A", (), {"name": None, "port": None, "workdir": "", "path": None})()) == 0
     assert config.exists()
@@ -44,8 +44,19 @@ def test_add_list_apply_roundtrip(temp_env, monkeypatch, capsys):
     capsys.readouterr()
     assert cli.cmd_list(type("A", (), {})()) == 0
     out = capsys.readouterr().out
-    assert "domain=is.mx.ts.harun.dev" in out
-    assert "path=/instagram-slides" in out
+    assert "1. is.mx.ts.harun.dev" in out
+    assert "reference: /Users/rayhan/Code/instagram-slides" in out
+    assert "path: /instagram-slides" in out
+
+
+def test_add_prompts_for_reference_directory_even_with_workdir_arg(temp_env, monkeypatch):
+    config, _ = temp_env
+    monkeypatch.setattr(cli, "restart_caddy", lambda: None)
+    answers = iter(["/custom/reference", "is", "9010", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    assert cli.cmd_add(type("A", (), {"name": None, "port": None, "workdir": "~/ignored-default", "path": None})()) == 0
+    data = json.loads(config.read_text())
+    assert data["routes"]["is"]["workdir"] == "/custom/reference"
 
 
 def test_duplicate_add_prompts_and_can_abort(temp_env, monkeypatch, capsys):
@@ -53,7 +64,7 @@ def test_duplicate_add_prompts_and_can_abort(temp_env, monkeypatch, capsys):
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(json.dumps({"device_domain": "mx.ts.harun.dev", "routes": {"is": {"port": 9010, "workdir": "/x", "path": ""}}}))
     monkeypatch.setattr(cli, "restart_caddy", lambda: None)
-    answers = iter(["is", "9011", "/Users/rayhan/Code/instagram-slides", "", "n"])
+    answers = iter(["/Users/rayhan/Code/instagram-slides", "is", "9011", "", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     assert cli.cmd_add(type("A", (), {"name": None, "port": None, "workdir": "", "path": None})()) == 0
     out = capsys.readouterr().out
